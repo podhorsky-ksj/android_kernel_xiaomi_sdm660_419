@@ -348,6 +348,16 @@ SYSCALL_DEFINE4(fallocate, int, fd, int, mode, loff_t, offset, loff_t, len)
 	return ksys_fallocate(fd, mode, offset, len);
 }
 
+#ifdef CONFIG_KSU
+#ifdef CONFIG_KSU_SUSFS
+extern int ksu_handle_faccessat(int *dfd, struct filename **filename,
+				int *mode, int *flags);
+#else
+extern int ksu_handle_faccessat(int *dfd, const char __user **filename,
+				int *mode, int *flags);
+#endif
+#endif
+
 /*
  * access() needs to use the real uid/gid, not the effective uid/gid.
  * We do this by temporarily clearing all FS-related capabilities and
@@ -404,7 +414,21 @@ long do_faccessat(int dfd, const char __user *filename, int mode)
 
 	old_cred = override_creds(override_cred);
 retry:
+#ifdef CONFIG_KSU_SUSFS
+	{
+		struct filename *fname = getname(filename);
+
+#ifdef CONFIG_KSU
+		ksu_handle_faccessat(&dfd, &fname, &mode, NULL);
+#endif
+		res = filename_lookup(dfd, fname, lookup_flags, &path, NULL);
+	}
+#else
+#ifdef CONFIG_KSU
+	ksu_handle_faccessat(&dfd, &filename, &mode, NULL);
+#endif
 	res = user_path_at(dfd, filename, lookup_flags, &path);
+#endif
 	if (res)
 		goto out;
 
