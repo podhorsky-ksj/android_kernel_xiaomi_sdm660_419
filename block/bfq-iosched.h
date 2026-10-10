@@ -187,6 +187,7 @@ struct bfq_entity {
 
 	/* parent entity, for hierarchical scheduling */
 	struct bfq_entity *parent;
+	struct bfq_queue *last_bfqq_created;
 
 	/*
 	 * For non-leaf nodes in the hierarchy, the associated
@@ -234,6 +235,7 @@ struct bfq_ttime {
 struct bfq_queue {
 	/* reference counter */
 	int ref;
+	int stable_ref;
 	/* parent bfq_data */
 	struct bfq_data *bfqd;
 
@@ -361,6 +363,9 @@ struct bfq_queue {
 	unsigned long wr_start_at_switch_to_srt;
 
 	unsigned long split_time; /* time of last split */
+	unsigned long creation_time;
+	u64 io_start_time;
+	u64 tot_idle_time;
 
 	unsigned long first_IO_time; /* time of first I/O for this queue */
 
@@ -375,6 +380,8 @@ struct bfq_queue {
 	 * bfq_select_queue().
 	 */
 	struct bfq_queue *waker_bfqq;
+	struct bfq_queue *tentative_waker_bfqq;
+	unsigned int num_waker_detections;
 	/* node for woken_list, see below */
 	struct hlist_node woken_list_node;
 	/*
@@ -410,6 +417,8 @@ struct bfq_io_cq {
 	 * classification of a queue.
 	 */
 	bool saved_IO_bound;
+	u64 saved_io_start_time;
+	u64 saved_tot_idle_time;
 
 	/*
 	 * Same purpose as the previous fields for the value of the
@@ -421,6 +430,8 @@ struct bfq_io_cq {
 	 * with another cooperating queue.
 	 */
 	bool was_in_burst_list;
+	bool stably_merged;
+	struct bfq_queue *stable_merge_bfqq;
 
 	/*
 	 * Save the weight when a merge occurs, to be able
@@ -562,6 +573,7 @@ struct bfq_data {
 
 	/* bfqq owning the last completed rq */
 	struct bfq_queue *last_completed_rq_bfqq;
+	struct bfq_queue *last_bfqq_created;
 
 	/* time of last transition from empty to non-empty (ns) */
 	u64 last_empty_occupied_ns;
@@ -773,8 +785,7 @@ enum bfqq_state_flags {
 				 * update
 				 */
 	BFQQF_coop,		/* bfqq is shared */
-	BFQQF_split_coop,	/* shared bfqq will be split */
-	BFQQF_has_waker		/* bfqq has a waker queue */
+	BFQQF_split_coop	/* shared bfqq will be split */
 };
 
 #define BFQ_BFQQ_FNS(name)						\
@@ -794,7 +805,6 @@ BFQ_BFQQ_FNS(in_large_burst);
 BFQ_BFQQ_FNS(coop);
 BFQ_BFQQ_FNS(split_coop);
 BFQ_BFQQ_FNS(softrt_update);
-BFQ_BFQQ_FNS(has_waker);
 #undef BFQ_BFQQ_FNS
 
 /* Expiration reasons. */
